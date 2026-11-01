@@ -2,29 +2,50 @@ use std::io::{self, Write};
 
 use super::ui::{clear_screen, print_page_title, read_choice, wait_for_enter};
 
+/// Returns the character index of the first occurrence of `needle` in `haystack`.
+///
+/// Indices are measured in Unicode scalar values (`char`), not UTF-8 bytes.
+/// An empty pattern matches at position 0.
 pub fn find_kmp(haystack: &str, needle: &str) -> Option<usize> {
     let text: Vec<_> = haystack.chars().collect();
     let pattern: Vec<_> = needle.chars().collect();
 
-    // Note:
-    // `i` and `j` are used to denote the next character to be matched.
+    // `i` and `j` denote the indices of the next characters to be compared
+    // in the text and pattern, respectively.
+    //
+    // Equivalently, `j` is the number of pattern characters currently matched.
 
     let mut highest_pos_with_known_lps: usize = 0;
     let (mut i, mut j) = (0, 0);
     let mut lps: Vec<usize> = vec![0; pattern.len()];
 
-    // Longest Proper Prefix which is also a suffix
+    // LPS (Longest Proper Prefix which is also a Suffix):
+    // `lps[p]` is the length of the longest proper prefix of pattern[..=p]
+    // that is also a suffix of that substring.
+    //
+    // The LPS array is computed lazily, as needed during matching.
+    // `highest_pos_with_known_lps` tracks the last computed entry.
+    // Initially, only lps[0] = 0 is known.
 
     while i < text.len() && j < pattern.len() {
         if j > 0 && j > highest_pos_with_known_lps {
+            // Compute lps[j] by attempting to extend a border
+            // (a prefix that is also a suffix) of pattern[..j].
+            //
+            // Start with the longest such border.
+            // `k` represents both its length and the index of the
+            // next pattern character needed to extend it.
+
             let mut k = lps[j - 1];
 
+            // If the current border cannot be extended by pattern[j],
+            // fall back to the next shorter candidate border.
             while k > 0 && pattern[j] != pattern[k] {
                 k = lps[k - 1];
             }
 
-            // case 1: k > 0 (we've found some really available bound.)
-            // case 2: k == 0 (we've not found any reasonable bound yet.)
+            // If the next characters match, the border extends by one.
+            // Otherwise, no nonempty border exists, so k remains zero.
             if pattern[j] == pattern[k] {
                 k += 1;
             }
@@ -32,17 +53,23 @@ pub fn find_kmp(haystack: &str, needle: &str) -> Option<usize> {
             lps[j] = k;
             highest_pos_with_known_lps = j;
         }
+
         if text[i] == pattern[j] {
+            // Extend the current match by one character.
             i += 1;
             j += 1;
         } else if j > 0 {
-            // We have the chance to just backtrack.
+            // Preserve the longest prefix that could still match.
+            // The text index `i` remains unchanged: no backtracking
+            // through the text is necessary.
             j = lps[j - 1];
         } else {
+            // No prefix has matched; advance to the next text character.
             i += 1;
         }
     }
 
+    // A complete match ends at i, so its starting index is i - j.
     (j == pattern.len()).then_some(i - j)
 }
 
@@ -77,7 +104,10 @@ pub fn run() {
                     .expect("Failed to read in the pattern string!");
 
                 println!();
-                match find_kmp(&source.trim_end_matches(['\n', 'r']), &pattern.trim_end_matches(['\n', 'r'])) {
+                match find_kmp(
+                    &source.trim_end_matches(['\n', '\r']),
+                    &pattern.trim_end_matches(['\n', '\r']),
+                ) {
                     Some(position) => println!(
                         "The first occurence of the string is found at {}.",
                         position
@@ -261,9 +291,6 @@ mod tests {
 
         let haystack_without_match = "a".repeat(2048);
 
-        assert_eq!(
-            find_kmp(&haystack_without_match, &needle),
-            None
-        );
+        assert_eq!(find_kmp(&haystack_without_match, &needle), None);
     }
 }
