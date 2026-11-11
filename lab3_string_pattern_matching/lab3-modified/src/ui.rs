@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+/// Suitable for prompting a user to enter a u8 choice
 pub fn read_choice() -> u8 {
     loop {
         print!("Please enter your choice: ");
