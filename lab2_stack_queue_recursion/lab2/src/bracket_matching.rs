@@ -144,4 +144,18 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn nested_and_cross_matching() {
+        // Properly nested mixed brackets match.
+        assert_eq!(
+            BracketSequence::parse("([()])").unwrap().check_matching(),
+            Matched
+        );
+        // Cross-nesting is not a valid bracket sequence.
+        assert_eq!(
+            BracketSequence::parse("([)]").unwrap().check_matching(),
+            Mismatched
+        );
+    }
 }

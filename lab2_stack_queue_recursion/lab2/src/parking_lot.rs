@@ -30,6 +30,7 @@ pub enum InputRecord {
     End,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum ParkingLog {
     Parked {
         license: u32,
@@ -155,7 +156,9 @@ fn parse_record<R: BufRead>(p: &mut Parser<R>) -> Result<InputRecord, ParseError
         })),
         'E' if license == 0 && time == 0 => Ok(InputRecord::End),
         'E' => Err(ParseError::InvalidEnd),
-        _ => unreachable!(),
+        // Any other action is malformed input, not an impossible state, so it
+        // must surface as a parse error rather than panic the whole program.
+        _ => Err(ParseError::Expected("action 'A', 'D', or 'E'")),
     }
 }
 
@@ -359,5 +362,188 @@ fn run_simulation_once() {
     println!("  Simulation result:");
     for log in &result.logs {
         println!("    - {log}");
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Cursor;
+
+    fn parse(input: &str) -> Result<Vec<ParkingEvent>, ParseError> {
+        read_events(Cursor::new(input.as_bytes()))
+    }
+
+    fn lot(capacity: usize) -> ParkingLot {
+        ParkingLot::new(capacity)
+    }
+
+    #[test]
+    fn read_events_parses_a_valid_sequence() {
+        let events =
+            parse("(A, 1001, 0)\n(A, 1002, 1)\n(D, 1001, 5)\n(E, 0, 0)\n").unwrap();
+        assert_eq!(
+            events,
+            vec![
+                ParkingEvent::Arrival { license: 1001, time: 0 },
+                ParkingEvent::Arrival { license: 1002, time: 1 },
+                ParkingEvent::Departure { license: 1001, time: 5 },
+            ]
+        );
+    }
+
+    #[test]
+    fn read_events_accepts_quotes_and_fullwidth_punctuation() {
+        let events = parse("（'A'，1001，0）\n(\"D\", 1001, 5)\n(E, 0, 0)\n").unwrap();
+        assert_eq!(
+            events,
+            vec![
+                ParkingEvent::Arrival { license: 1001, time: 0 },
+                ParkingEvent::Departure { license: 1001, time: 5 },
+            ]
+        );
+    }
+
+    #[test]
+    fn read_events_requires_an_end_record() {
+        assert!(matches!(parse("(A, 1001, 0)\n"), Err(ParseError::MissingEnd)));
+    }
+
+    #[test]
+    fn read_events_rejects_a_malformed_end_record() {
+        assert!(matches!(parse("(E, 1, 2)\n"), Err(ParseError::InvalidEnd)));
+    }
+
+    #[test]
+    fn read_events_rejects_an_unknown_action() {
+        assert!(matches!(
+            parse("(X, 1, 2)\n(E, 0, 0)\n"),
+            Err(ParseError::Expected(_))
+        ));
+    }
+
+    #[test]
+    fn read_events_rejects_an_oversized_license() {
+        assert!(matches!(
+            parse("(A, 4294967296, 0)\n(E, 0, 0)\n"),
+            Err(ParseError::NumberTooLarge)
+        ));
+    }
+
+    #[test]
+    fn arrival_parks_when_space_is_available() {
+        let mut lot = lot(2);
+        let log = lot
+            .handle_event(ParkingEvent::Arrival { license: 1, time: 0 })
+            .unwrap();
+        assert_eq!(log, ParkingLog::Parked { license: 1, position: 1 });
+    }
+
+    #[test]
+    fn arrival_queues_when_lot_is_full() {
+        let mut lot = lot(1);
+        lot.handle_event(ParkingEvent::Arrival { license: 1, time: 0 })
+            .unwrap();
+        let log = lot
+            .handle_event(ParkingEvent::Arrival { license: 2, time: 0 })
+            .unwrap();
+        assert_eq!(log, ParkingLog::Queued { license: 2, position: 1 });
+    }
+
+    #[test]
+    fn departure_charges_fee_for_time_parked() {
+        let mut lot = lot(1);
+        lot.handle_event(ParkingEvent::Arrival { license: 1, time: 2 })
+            .unwrap();
+        let log = lot
+            .handle_event(ParkingEvent::Departure { license: 1, time: 7 })
+            .unwrap();
+        assert_eq!(log, ParkingLog::Departed { license: 1, duration: 5, fee: 5 });
+    }
+
+    #[test]
+    fn departure_promotes_the_waiting_car() {
+        let mut lot = lot(1);
+        lot.handle_event(ParkingEvent::Arrival { license: 1, time: 0 })
+            .unwrap();
+        lot.handle_event(ParkingEvent::Arrival { license: 2, time: 0 })
+            .unwrap();
+
+        let leaving = lot
+            .handle_event(ParkingEvent::Departure { license: 1, time: 5 })
+            .unwrap();
+        assert_eq!(leaving, ParkingLog::Departed { license: 1, duration: 5, fee: 5 });
+
+        // Car 2 was parked at time 5 (the departure time), so leaving at time 9
+        // costs 4 units.
+        let promoted = lot
+            .handle_event(ParkingEvent::Departure { license: 2, time: 9 })
+            .unwrap();
+        assert_eq!(promoted, ParkingLog::Departed { license: 2, duration: 4, fee: 4 });
+    }
+
+    #[test]
+    fn duplicate_parked_license_is_rejected() {
+        let mut lot = lot(2);
+        lot.handle_event(ParkingEvent::Arrival { license: 1, time: 0 })
+            .unwrap();
+        let result = lot.handle_event(ParkingEvent::Arrival { license: 1, time: 1 });
+        assert_eq!(result, Err(ParkingError::DuplicateLicense(1)));
+    }
+
+    #[test]
+    fn duplicate_queued_license_is_rejected() {
+        let mut lot = lot(1);
+        lot.handle_event(ParkingEvent::Arrival { license: 1, time: 0 })
+            .unwrap();
+        lot.handle_event(ParkingEvent::Arrival { license: 2, time: 0 })
+            .unwrap();
+        let result = lot.handle_event(ParkingEvent::Arrival { license: 2, time: 1 });
+        assert_eq!(result, Err(ParkingError::DuplicateLicense(2)));
+    }
+
+    #[test]
+    fn departing_an_unknown_car_is_an_error() {
+        let mut lot = lot(2);
+        let result = lot.handle_event(ParkingEvent::Departure { license: 99, time: 0 });
+        assert_eq!(result, Err(ParkingError::VehicleNotFound(99)));
+    }
+
+    #[test]
+    fn out_of_order_timestamp_is_rejected() {
+        let mut lot = lot(2);
+        lot.handle_event(ParkingEvent::Arrival { license: 1, time: 5 })
+            .unwrap();
+        let result = lot.handle_event(ParkingEvent::Arrival { license: 2, time: 3 });
+        assert_eq!(
+            result,
+            Err(ParkingError::InvalidTimestamp { previous: 5, current: 3 })
+        );
+    }
+
+    #[test]
+    fn full_simulation_produces_the_expected_log() {
+        let mut lot = lot(2);
+        let events = vec![
+            ParkingEvent::Arrival { license: 1, time: 0 },
+            ParkingEvent::Arrival { license: 2, time: 0 },
+            ParkingEvent::Arrival { license: 3, time: 1 },
+            ParkingEvent::Departure { license: 2, time: 5 },
+            ParkingEvent::Departure { license: 1, time: 8 },
+            ParkingEvent::Departure { license: 3, time: 10 },
+        ];
+        let result = run_simulation(&mut lot, events);
+
+        assert_eq!(
+            result.logs,
+            vec![
+                ParkingLog::Parked { license: 1, position: 1 },
+                ParkingLog::Parked { license: 2, position: 2 },
+                ParkingLog::Queued { license: 3, position: 1 },
+                ParkingLog::Departed { license: 2, duration: 5, fee: 5 },
+                ParkingLog::Departed { license: 1, duration: 8, fee: 8 },
+                ParkingLog::Departed { license: 3, duration: 5, fee: 5 },
+            ]
+        );
     }
 }

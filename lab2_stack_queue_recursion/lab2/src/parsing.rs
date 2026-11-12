@@ -184,3 +184,107 @@ impl<R: BufRead> Parser<R> {
         usize::try_from(self.parse_u64()?).map_err(|_| ParseError::NumberTooLarge)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::{ParseError, Parser};
+    use std::io::Cursor;
+
+    fn parser(input: &str) -> Parser<Cursor<&[u8]>> {
+        Parser::new(Cursor::new(input.as_bytes()))
+    }
+
+    #[test]
+    fn parse_u64_reads_a_number() {
+        assert_eq!(parser("42").parse_u64().unwrap(), 42);
+        assert_eq!(parser("  0  ").parse_u64().unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_u64_rejects_non_numeric_input() {
+        assert!(matches!(
+            parser("abc").parse_u64(),
+            Err(ParseError::Expected("unsigned integer"))
+        ));
+    }
+
+    #[test]
+    fn parse_u64_detects_overflow() {
+        // u64::MAX + 1 no longer fits.
+        assert!(matches!(
+            parser("18446744073709551616").parse_u64(),
+            Err(ParseError::NumberTooLarge)
+        ));
+    }
+
+    #[test]
+    fn parse_u32_rejects_out_of_range_values() {
+        assert_eq!(parser("4294967295").parse_u32().unwrap(), u32::MAX);
+        assert!(matches!(
+            parser("4294967296").parse_u32(),
+            Err(ParseError::NumberTooLarge)
+        ));
+    }
+
+    #[test]
+    fn parse_u8_rejects_out_of_range_values() {
+        assert_eq!(parser("255").parse_u8().unwrap(), u8::MAX);
+        assert!(matches!(
+            parser("256").parse_u8(),
+            Err(ParseError::NumberTooLarge)
+        ));
+    }
+
+    #[test]
+    fn parse_usize_reads_a_number() {
+        assert_eq!(parser("1234").parse_usize().unwrap(), 1234usize);
+    }
+
+    #[test]
+    fn peek_does_not_consume() {
+        let mut p = parser("abc");
+        assert_eq!(p.peek().unwrap(), Some('a'));
+        assert_eq!(p.peek().unwrap(), Some('a'));
+    }
+
+    #[test]
+    fn next_skips_whitespace_before_consuming() {
+        assert_eq!(parser("  \n\t x").next().unwrap(), Some('x'));
+    }
+
+    #[test]
+    fn skip_ws_crosses_line_boundaries() {
+        let mut p = parser(" \n\t x");
+        p.skip_ws().unwrap();
+        assert_eq!(p.peek().unwrap(), Some('x'));
+    }
+
+    #[test]
+    fn expect_accepts_a_matching_character() {
+        let mut p = parser("(123");
+        p.expect(&['(', '（'], "opening parenthesis").unwrap();
+        assert_eq!(p.peek().unwrap(), Some('1'));
+    }
+
+    #[test]
+    fn expect_rejects_a_non_matching_character() {
+        assert!(matches!(
+            parser(")123").expect(&['('], "opening parenthesis"),
+            Err(ParseError::Expected("opening parenthesis"))
+        ));
+    }
+
+    #[test]
+    fn reads_across_multiple_lines() {
+        let mut p = parser("12\n34\n");
+        assert_eq!(p.parse_u64().unwrap(), 12);
+        assert_eq!(p.parse_u64().unwrap(), 34);
+    }
+
+    #[test]
+    fn discard_line_drops_the_rest_of_the_line() {
+        let mut p = parser("garbage 123\nnext");
+        p.discard_line().unwrap();
+        assert_eq!(p.peek().unwrap(), Some('n'));
+    }
+}

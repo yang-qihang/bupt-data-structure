@@ -69,3 +69,70 @@ impl<T> Stack<T> {
         self.top == 0
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Stack;
+
+    #[test]
+    fn new_stack_is_empty() {
+        let stack = Stack::<i32>::new();
+        assert!(stack.is_empty());
+        assert_eq!(stack.len(), 0);
+    }
+
+    #[test]
+    fn push_and_pop_follow_lifo_order() {
+        let mut stack = Stack::new();
+        stack.push(1);
+        stack.push(2);
+        stack.push(3);
+
+        assert_eq!(stack.len(), 3);
+        assert!(!stack.is_empty());
+
+        assert_eq!(stack.pop(), Some(3));
+        assert_eq!(stack.pop(), Some(2));
+        assert_eq!(stack.pop(), Some(1));
+        assert_eq!(stack.pop(), None);
+        assert!(stack.is_empty());
+    }
+
+    #[test]
+    fn pop_on_empty_stack_returns_none() {
+        let mut stack = Stack::<i32>::new();
+        assert_eq!(stack.pop(), None);
+    }
+
+    #[test]
+    fn grows_beyond_initial_capacity() {
+        // The initial capacity is 5; pushing more must trigger a reallocation
+        // while preserving every element.
+        let mut stack = Stack::new();
+        for value in 0..20 {
+            stack.push(value);
+        }
+        assert_eq!(stack.len(), 20);
+        for expected in (0..20).rev() {
+            assert_eq!(stack.pop(), Some(expected));
+        }
+        assert!(stack.is_empty());
+    }
+
+    #[test]
+    fn remains_usable_after_draining() {
+        let mut stack = Stack::new();
+        for value in 0..8 {
+            stack.push(value);
+        }
+        for _ in 0..8 {
+            assert!(stack.pop().is_some());
+        }
+        assert!(stack.is_empty());
+
+        // The stack must still accept new elements after being drained.
+        stack.push(42);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.pop(), Some(42));
+    }
+}

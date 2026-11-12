@@ -234,4 +234,71 @@ mod test {
 
         assert_eq!((*first, *second), (11, 22));
     }
+
+    #[test]
+    fn new_queue_is_empty() {
+        let queue = LinkedList::<i32>::new();
+        assert!(queue.is_empty());
+        assert_eq!(queue.len(), 0);
+    }
+
+    #[test]
+    fn push_and_pop_follow_fifo_order() {
+        let mut queue = LinkedList::new();
+        queue.push(1);
+        queue.push(2);
+        queue.push(3);
+
+        assert_eq!(queue.len(), 3);
+        assert!(!queue.is_empty());
+
+        assert_eq!(queue.pop(), Some(1));
+        assert_eq!(queue.pop(), Some(2));
+        assert_eq!(queue.pop(), Some(3));
+        assert_eq!(queue.pop(), None);
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn pop_on_empty_queue_returns_none() {
+        let mut queue = LinkedList::<i32>::new();
+        assert_eq!(queue.pop(), None);
+    }
+
+    #[test]
+    fn refills_correctly_after_draining() {
+        // Draining the queue and pushing again exercises the head/tail
+        // invariants when the list transitions in and out of the empty state.
+        let mut queue = LinkedList::new();
+        queue.push(1);
+        assert_eq!(queue.pop(), Some(1));
+        assert!(queue.is_empty());
+
+        queue.push(2);
+        queue.push(3);
+        assert_eq!(queue.pop(), Some(2));
+        assert_eq!(queue.pop(), Some(3));
+        assert!(queue.is_empty());
+        assert_eq!(queue.len(), 0);
+    }
+
+    #[test]
+    fn iter_yields_in_fifo_order() {
+        let mut queue = LinkedList::new();
+        queue.push(1);
+        queue.push(2);
+        queue.push(3);
+        let collected: Vec<i32> = queue.iter().copied().collect();
+        assert_eq!(collected, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn into_iter_yields_in_fifo_order() {
+        let mut queue = LinkedList::new();
+        queue.push(1);
+        queue.push(2);
+        queue.push(3);
+        let collected: Vec<i32> = queue.into_iter().collect();
+        assert_eq!(collected, vec![1, 2, 3]);
+    }
 }

@@ -87,3 +87,69 @@ impl<'a, T> IntoIterator for &'a LinkedList<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::LinkedList;
+
+    #[test]
+    fn new_list_is_empty() {
+        let list = LinkedList::<i32>::new();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn push_and_pop_follow_lifo_order() {
+        let mut list = LinkedList::new();
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        assert!(!list.is_empty());
+        assert_eq!(list.pop(), Some(3));
+        assert_eq!(list.pop(), Some(2));
+        assert_eq!(list.pop(), Some(1));
+        assert_eq!(list.pop(), None);
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn pop_on_empty_list_returns_none() {
+        let mut list = LinkedList::<i32>::new();
+        assert_eq!(list.pop(), None);
+    }
+
+    #[test]
+    fn from_vec_yields_elements_in_input_order() {
+        // `from` pushes each element so that popping them back yields the
+        // original vector order.
+        let mut list = LinkedList::from(vec![1, 2, 3]);
+        assert_eq!(list.pop(), Some(1));
+        assert_eq!(list.pop(), Some(2));
+        assert_eq!(list.pop(), Some(3));
+        assert_eq!(list.pop(), None);
+    }
+
+    #[test]
+    fn iter_yields_in_push_order() {
+        let mut list = LinkedList::new();
+        list.push(1);
+        list.push(2);
+        list.push(3);
+        let collected: Vec<i32> = list.iter().copied().collect();
+        assert_eq!(collected, vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn iter_reflects_pops() {
+        let mut list = LinkedList::new();
+        list.push(1);
+        list.push(2);
+        list.push(3);
+
+        assert_eq!(list.pop(), Some(3));
+        // The remaining elements are still reachable from the head.
+        let collected: Vec<i32> = list.iter().copied().collect();
+        assert_eq!(collected, vec![2, 1]);
+    }
+}
